@@ -20,16 +20,19 @@ npm ci --ignore-scripts --no-audit --no-fund
 npm run build
 rsync -a --delete --exclude piskelapp-partials dest/prod/ site/
 cp LICENSE site/LICENSE
+rm site/css/fonts/icomoon.eot site/css/fonts/piskel.eot
 ```
 
 - `--ignore-scripts` skips Puppeteer's Chrome download, nw-builder's postinstall and Husky's git hook setup. The web build uses none of them.
 - `npm run build` is upstream's own build: `node scripts/sprite.js` (spritesmith icon sheets), `vite build` with the plugins in `vite-plugins/` (concatenates and minifies the scripts, inlines the templates and `piskel-boot.js` into `index.html`), then `node scripts/partials.js`.
 - The built script and stylesheet names carry the build time (`-2026-10-23-01-01` here), so a rebuild produces new names. Replace `site/` as a whole (`rsync --delete` above) rather than copying over it.
+- The last line removes the two Internet Explorer font files that Tofu's Free static lane refuses (see below).
 
 ## What Tofu changed and why
 
-- Added `site/`: upstream's build output for the pinned commit, unmodified, so Tofu's static lane can serve the editor without running a build it cannot run.
+- Added `site/`: upstream's build output for the pinned commit, with no file in it modified, so Tofu's static lane can serve the editor without running a build it cannot run. Two of its font files are removed (below).
 - Left out `dest/prod/piskelapp-partials/`. Those three files are Liquid and front-matter page templates for upstream's website, piskelapp.com, not pages of the app; served as they are, they would be broken pages.
+- Removed `site/css/fonts/icomoon.eot` and `site/css/fonts/piskel.eot`. EOT is a font format only Internet Explorer reads, and Tofu's Free static lane serves no `.eot` file: a single one anywhere in the folder keeps the whole site off that lane. The stylesheet is left as built. Its one `@font-face` rule lists `icomoon.eot` first, then `icomoon.woff`, `icomoon.ttf` and `icomoon.svg`; browsers other than Internet Explorer skip the EOT entry by its `embedded-opentype` format hint and load `icomoon.woff`, so nothing requests the removed files. Nothing refers to `piskel.eot`: the stylesheet uses none of the `piskel.*` font files.
 - Kept both packaged scripts and their source maps. `index.html` loads the minified script; the unminified one keeps the bundled libraries' licence headers in full.
 - Added `site/LICENSE`, a byte-identical copy of the root `LICENSE`, so the licence travels with the site.
 - No upstream source file is modified.
@@ -38,7 +41,7 @@ cp LICENSE site/LICENSE
 ## Upstream and licence
 
 - Upstream: <https://github.com/piskelapp/piskel>, branch `master`, commit `d828941fa9fe76464d69d91d5fd862067c98c02c` (2026-10-21, "Delete RELEASE.md, it's completely outdated"), package version `0.15.2-SNAPSHOT`.
-- Fork: <https://github.com/tofu-gallery/piskel>. `master` mirrors upstream and Tofu never commits to it. `tofu` carries Tofu's commits. `pin/2026-10-23` marks the provenance notes alone (no site); `pin/2026-10-23.1` marks this version, with the built site.
+- Fork: <https://github.com/tofu-gallery/piskel>. `master` mirrors upstream and Tofu never commits to it. `tofu` carries Tofu's commits. `pin/2026-10-23` marks the provenance notes alone (no site); `pin/2026-10-23.1` marks the first version with the built site, which still held the two `.eot` fonts; `pin/2026-10-23.2` marks this version, without them.
 - A visitor who chooses this app gets a private snapshot of the pinned version in their own Tofu account. Their copy does not follow upstream updates.
 - Licence: Apache-2.0. The root `LICENSE` is unchanged and copied to `site/LICENSE`. Upstream ships no `NOTICE` file.
 - Caveats:
@@ -52,6 +55,8 @@ cp LICENSE site/LICENSE
 
 Done on 2026-10-23 on macOS (arm64) with Node v22.22.3 and npm 10.9.8. No app was deployed.
 
+Building `site/` (`pin/2026-10-23.1`):
+
 1. `npm ci --ignore-scripts --no-audit --no-fund`: added 501 packages from the upstream lockfile.
 2. `npm run build`: icon sheets generated, `vite build` finished ("built in 1.07s"), three partials written; exit 0. `site/` then held 107 files, 5.3 MB.
 3. Import filter: copied `site/` with every path Tofu's GitHub import drops removed (`node_modules`, `dist`, `build`, `target`, `.cache` and the rest of the list, `.DS_Store`, `._*`, credential files). `diff -rq` found the copy identical to `site/`: nothing is dropped.
@@ -59,4 +64,8 @@ Done on 2026-10-23 on macOS (arm64) with Node v22.22.3 and npm 10.9.8. No app wa
 5. Browser, in its own tab against 127.0.0.1 only: the editor loaded (32x32 sprite, pen tool, black primary colour). Once the boot screen's loading mask was gone (it covers the page for 0.6 s after start), a five-pixel diagonal stroke and a single click drew 6 pixels in the frame. Export, then PNG, then Download handed the browser `New Piskel.png`: a 189-byte `image/png` file with the PNG signature, 32x32, with exactly 6 opaque pixels. The page's own save was intercepted, so no file was written to the Downloads folder. Console errors: none. Failed requests: none from the app; the browser's automatic `/favicon.ico` request got 404 because upstream ships no favicon, which is harmless.
 6. After `tofu` was pushed: `python3 -I simulate_import.py --one tofu-gallery/piskel tofu site yes` reported `root=site container=False kept=107 dropped=0` and no problems.
 
-Not run: upstream's Karma unit tests and Playwright end-to-end tests. They need browser downloads that this preparation does not install; step 5 covers the editor's core action.
+Removing the two `.eot` fonts (`pin/2026-10-23.2`):
+
+7. Import filter and browser: copied the new `site/` with every path Tofu's GitHub import drops removed. `diff -rq` against a copy of the old `site/` made the same way listed only the two `.eot` files; the new copy holds 105 files. Each copy was served with `python3 -I -m http.server` on 127.0.0.1 and opened in its own browser tab at 1440x900. In both, the page requested one font file, `css/fonts/icomoon.woff`, with HTTP 200, the `piskel` font face reported `loaded`, and nothing asked for an `.eot`. The layers panel and the preview's onion-skin bar, where the icon font is drawn, are pixel-identical in the two screenshots; the full screenshots differ only in a strip under 3 pixels wide at the window's right edge, over the right-hand toolbar's image buttons, which do not use the font. A diagonal pen stroke and a single click drew pixels in the 32x32 frame in both copies (8 and 10 opaque pixels: the editor throttles pointer moves by time, so a scripted stroke's exact pixels vary between runs). Console errors: none. Failed requests: only the browser's automatic `/favicon.ico` (404), as before.
+
+Not run: upstream's Karma unit tests and Playwright end-to-end tests. They need browser downloads that this preparation does not install; steps 5 and 7 cover the editor's core action.
