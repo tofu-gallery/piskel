@@ -41,7 +41,7 @@ rm site/css/fonts/icomoon.eot site/css/fonts/piskel.eot
 ## Upstream and licence
 
 - Upstream: <https://github.com/piskelapp/piskel>, branch `master`, commit `d828941fa9fe76464d69d91d5fd862067c98c02c` (2026-10-21, "Delete RELEASE.md, it's completely outdated"), package version `0.15.2-SNAPSHOT`.
-- Fork: <https://github.com/tofu-gallery/piskel>. `master` mirrors upstream and Tofu never commits to it. `tofu` carries Tofu's commits. `pin/2026-10-23` marks the provenance notes alone (no site); `pin/2026-10-23.1` marks the first version with the built site, which still held the two `.eot` fonts; `pin/2026-10-23.2` marks the version without them, which still named the licence copy `site/LICENSE`; the next pin marks the version that renames it to `site/LICENSE.txt` (Verification, 2026-10-27).
+- Fork: <https://github.com/tofu-gallery/piskel>. `master` mirrors upstream and Tofu never commits to it. `tofu` carries Tofu's commits. `pin/2026-10-23` marks the provenance notes alone (no site); `pin/2026-10-23.1` marks the first version with the built site, which still held the two `.eot` fonts; `pin/2026-10-23.2` marks the version without them, which still named the licence copy `site/LICENSE`; `pin/2026-10-27` marks the version that renames it to `site/LICENSE.txt` (Verification, 2026-10-27).
 - A visitor who chooses this app gets a private snapshot of the pinned version in their own Tofu account. Their copy does not follow upstream updates.
 - Licence: Apache-2.0. The root `LICENSE` is unchanged and copied to `site/LICENSE.txt`. Upstream ships no `NOTICE` file.
 - Caveats:
@@ -74,7 +74,7 @@ Not run: upstream's Karma unit tests and Playwright end-to-end tests. They need 
 
 Done on 2026-10-27 on macOS (arm64) with Python 3.11.4 and curl 8.1.1. No app was deployed in these steps.
 
-Publishing the licence as `.txt`:
+Publishing the licence as `.txt` (`pin/2026-10-27`):
 
 10. Why: in step 8 `site/LICENSE` was the one file the Free static lane did not publish, so the site that lane publishes lacked Piskel's Apache-2.0 licence text. The lane skips a repository document such as `README.md`, `LICENSE` or `CHANGELOG` unless its name ends in a type the host serves as it is, such as `.txt`. Tofu's rule for this (`staticPathVerdict` in Tofu's source) lists `txt` among the published types; it was read, not run.
 11. `git mv site/LICENSE site/LICENSE.txt`: git reports a 100% rename, and `cmp LICENSE site/LICENSE.txt` finds the two files identical (11,358 bytes each). `grep` over `site/` finds no link or path to a file named `LICENSE`. `index.html` does not mention a licence. In the stylesheet, the two scripts and the two source maps, every licence mention is a bundled library's own notice, such as jQuery's "Released under the MIT license", and the only addresses in those notices that contain `license`, in any letter case, are three external URLs: `http://jquery.org/license`, `http://www.apache.org/licenses/LICENSE-2.0` and `https://raw.github.com/Stuk/jszip/master/LICENSE.markdown`.
