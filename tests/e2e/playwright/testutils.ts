@@ -92,6 +92,19 @@ type TestGrid = Array<Array<TestColor>>;
 export const gridFromRows = (rows: string[]): TestGrid =>
   rows.map((row) => [...row].map((c) => (c === "X" ? "R" : "T")));
 
+/**
+ * Build a test grid from rows written like the ones of assertColorRows: R, G and B
+ * are red, green and blue, and . a transparent pixel.
+ */
+export const gridFromColorRows = (rows: string[]): TestGrid =>
+  rows.map((row) =>
+    [...row].map((c) => {
+      if (c === ".") return "T";
+      if (c === "R" || c === "G" || c === "B") return c;
+      throw new Error(`Unknown color letter "${c}" in "${row}"`);
+    })
+  );
+
 export const setPiskelFromGrid = async (
   page: Page,
   grid: TestGrid
@@ -377,6 +390,19 @@ export const assertNoPenSizeLabel = async (page: Page): Promise<void> => {
 };
 
 /**
+ * Pick a pen size with the picker. Sizes above 4 are only reachable with the
+ * `]` shortcut, from the size 4 option.
+ */
+export const setPenSize = async (page: Page, size: number): Promise<void> => {
+  await getPenSizeButton(page, Math.min(size, 4)).click();
+  await expect(getPenSizeButton(page, Math.min(size, 4))).toHaveClass(/selected/);
+  if (size > 4) {
+    await pressRepeatedly(page, "]", size - 4);
+    await assertPenSizeLabel(page, size);
+  }
+};
+
+/**
  * Convert a hex color string to Piskel's ABGR integer format.
  * Matches the format returned by getPixelColor().
  * Transparent (alpha=0) maps to 0.
@@ -430,6 +456,23 @@ export const drawAtPixel = async (
   );
   await moveMouseOntoCanvas(page, coords.x, coords.y);
   await page.mouse.click(coords.x, coords.y);
+};
+
+/** Click a pixel with the right mouse button, which uses the secondary color */
+export const rightClickAtPixel = async (
+  page: Page,
+  col: number,
+  row: number
+): Promise<void> => {
+  // Wait for any pending relayout (DrawingController uses setTimeout(200) for relayout)
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 200)));
+  const coords = await page.evaluate(
+    ({ col, row }) =>
+      window.pskl.app.drawingController.getScreenCoordinates(col, row),
+    { col, row }
+  );
+  await moveMouseOntoCanvas(page, coords.x, coords.y);
+  await page.mouse.click(coords.x, coords.y, { button: "right" });
 };
 
 /**
@@ -529,10 +572,42 @@ export const readPixelRows = async (
   return grid.map((row) => row.join(""));
 };
 
+/** Count the colored pixels in the first 10x10 pixels of the first frame */
+export const countDrawnPixels = async (page: Page): Promise<number> => {
+  const rows = await readPixelRows(page, 10, 10);
+  return rows.join("").split("X").length - 1;
+};
+
 /**
- * Drag from sprite pixel (x1,y1) to (x2,y2) via real mouse events.
- * Waits for any pending relayout before computing coordinates (same as drawAtPixel).
+ * Press the mouse on the first sprite pixel, move it through the others in order,
+ * and release it on the last one, via real mouse events, as when drawing a lasso
+ * selection. Waits for any pending relayout before computing coordinates (same as
+ * drawAtPixel).
  */
+export const dragThroughPixels = async (
+  page: Page,
+  pixels: Array<[number, number]>,
+  options?: { steps?: number }
+): Promise<void> => {
+  const steps = options?.steps ?? 5;
+  // Wait for any pending relayout (DrawingController uses setTimeout(200) for relayout)
+  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 210)));
+  const points = await page.evaluate(
+    (pixels) =>
+      pixels.map(([col, row]) =>
+        window.pskl.app.drawingController.getScreenCoordinates(col, row)
+      ),
+    pixels
+  );
+  await moveMouseOntoCanvas(page, points[0].x, points[0].y);
+  await page.mouse.down();
+  for (const point of points.slice(1)) {
+    await page.mouse.move(point.x, point.y, { steps });
+  }
+  await page.mouse.up();
+};
+
+/** Drag from sprite pixel (x1,y1) to (x2,y2) via real mouse events */
 export const dragBetweenPixels = async (
   page: Page,
   x1: number,
@@ -541,23 +616,35 @@ export const dragBetweenPixels = async (
   y2: number,
   options?: { steps?: number }
 ): Promise<void> => {
-  const steps = options?.steps ?? 5;
-  // Wait for any pending relayout (DrawingController uses setTimeout(200) for relayout)
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 210)));
-  const start = await page.evaluate(
-    ({ col, row }) =>
-      window.pskl.app.drawingController.getScreenCoordinates(col, row),
-    { col: x1, row: y1 }
-  );
-  const end = await page.evaluate(
-    ({ col, row }) =>
-      window.pskl.app.drawingController.getScreenCoordinates(col, row),
-    { col: x2, row: y2 }
-  );
-  await moveMouseOntoCanvas(page, start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(end.x, end.y, { steps });
-  await page.mouse.up();
+  await dragThroughPixels(page, [[x1, y1], [x2, y2]], options);
+};
+
+/** Click a transform tool with optional modifier keys held */
+export const clickTransform = async (
+  page: Page,
+  toolId: string,
+  modifiers: { alt?: boolean; shift?: boolean; ctrl?: boolean } = {}
+): Promise<void> => {
+  const tool = page.locator(`[data-tool-id="${toolId}"]`);
+
+  // Expand "show more" if the tool is not visible
+  if (!(await tool.isVisible())) {
+    await page.locator(".transformations-show-more-link").click();
+    await expect(tool).toBeVisible();
+  }
+
+  if (modifiers.alt) await page.keyboard.down("Alt");
+  if (modifiers.shift) await page.keyboard.down("Shift");
+  if (modifiers.ctrl) await page.keyboard.down(CMD_OR_CTRL);
+
+  await tool.click();
+
+  if (modifiers.ctrl) await page.keyboard.up(CMD_OR_CTRL);
+  if (modifiers.shift) await page.keyboard.up("Shift");
+  if (modifiers.alt) await page.keyboard.up("Alt");
+
+  // Wait for transform to apply
+  await wait(200);
 };
 
 /**
@@ -603,7 +690,12 @@ export const waitFor = async (
     timeout = 5000,
     interval = 100,
     message
-  }: { timeout?: number; interval?: number; message?: string } = {}
+  }: {
+    timeout?: number;
+    interval?: number;
+    // A function is called after the last try, so it can describe the final state
+    message?: string | (() => string);
+  } = {}
 ): Promise<void> => {
   const start = Date.now();
   while (Date.now() - start < timeout) {
@@ -611,7 +703,8 @@ export const waitFor = async (
     await new Promise((r) => setTimeout(r, interval));
   }
   if (!(await fn())) {
-    throw new Error(message ?? `waitFor: condition not met after ${timeout}ms`);
+    const text = typeof message === "function" ? message() : message;
+    throw new Error(text ?? `waitFor: condition not met after ${timeout}ms`);
   }
 };
 
@@ -685,7 +778,8 @@ export const waitForGrid = async (
     {
       timeout,
       interval,
-      message: `Grid did not match expected pattern within ${timeout}ms.\nExpected:\n${expectedGrid.join("\n")}\nGot:\n${lastGrid.join("\n")}`
+      message: () =>
+        `Grid did not match expected pattern within ${timeout}ms.\nExpected:\n${expectedGrid.join("\n")}\nGot:\n${lastGrid.join("\n")}`
     }
   );
 };
@@ -881,12 +975,9 @@ export const openEditorInNewPage = async (page: Page): Promise<Page> => {
   return newPage;
 };
 
-/** Create a 4x4 sprite: a layer with a pixel at (0,0), below an empty current layer */
+/** Create a 10x10 sprite: a layer with a pixel at (0,0), below an empty current layer */
 export const createEmptyLayerAbovePixel = async (page: Page): Promise<void> => {
-  await setPiskelFromGrid(
-    page,
-    gridFromRows(["X...", "....", "....", "...."])
-  );
+  await setPiskelFromGrid(page, gridFromRows(PIXEL_IN_FIRST_COLUMN));
   await getAddLayerButton(page).click();
   await assertCurrentLayer(page, 1);
 };
@@ -970,6 +1061,65 @@ export const deleteFrame = async (
 ): Promise<void> => {
   await getFrameTiles(page).nth(frameIndex).hover();
   await testId(page, "delete-frame-button").nth(frameIndex).click();
+};
+
+/** Duplicate a frame with the clone action of its tile */
+export const duplicateFrame = async (
+  page: Page,
+  frameIndex: number
+): Promise<void> => {
+  await getFrameTiles(page).nth(frameIndex).hover();
+  await testId(page, "duplicate-frame-button").nth(frameIndex).click();
+};
+
+/**
+ * Drag a frame from sourceIndex to targetIndex using the drag handle.
+ * jQuery sortable (tolerance: 'pointer') inserts at the position where
+ * the pointer crosses another item's midpoint.
+ */
+export const dragFrame = async (
+  page: Page,
+  sourceIndex: number,
+  targetIndex: number
+): Promise<void> => {
+  const tiles = getFrameTiles(page);
+  const handle = tiles.nth(sourceIndex).locator(".dnd-action");
+
+  // The handle only shows while the tile is hovered.
+  await tiles.nth(sourceIndex).hover();
+  await expect(handle).toBeVisible();
+  const handleBox = await handle.boundingBox();
+  expect(handleBox).not.toBeNull();
+
+  await page.mouse.move(
+    handleBox!.x + handleBox!.width / 2,
+    handleBox!.y + handleBox!.height / 2
+  );
+  await page.mouse.down();
+
+  // To land at targetIndex, we need to cross the midpoint of the item
+  // currently at that position. Get the target tile's bounding box.
+  const targetBox = await tiles.nth(targetIndex).boundingBox();
+  expect(targetBox).not.toBeNull();
+
+  const targetX = targetBox!.x + targetBox!.width / 2;
+  let targetY: number;
+
+  if (sourceIndex < targetIndex) {
+    // Moving down: go just past the bottom edge of the target tile
+    targetY = targetBox!.y + targetBox!.height + 5;
+  } else if (targetIndex === 0) {
+    // Moving up to the very start: go above the first tile
+    targetY = targetBox!.y - 10;
+  } else {
+    // Moving up to a middle position: stop at the center of the target tile
+    // This crosses the target's midpoint without crossing the previous item
+    targetY = targetBox!.y + targetBox!.height / 2;
+  }
+
+  await page.mouse.move(targetX, targetY, { steps: 15 });
+  await page.mouse.up();
+  await wait(500);
 };
 
 /** Click the number of a frame, which shows or hides it in the preview */
@@ -1084,33 +1234,76 @@ export const importPiskelFile = async (
   });
 };
 
-export const PIXEL_IN_FIRST_COLUMN = ["X...", "....", "....", "...."];
-export const PIXEL_IN_SECOND_COLUMN = [".X..", "....", "....", "...."];
-export const PIXEL_IN_THIRD_COLUMN = ["..X.", "....", "....", "...."];
+/** 10x10 frames of createThreeFrames, with a pixel in the first, second or third column */
+export const PIXEL_IN_FIRST_COLUMN = [
+  'X.........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+];
+export const PIXEL_IN_SECOND_COLUMN = [
+  '.X........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+];
+export const PIXEL_IN_THIRD_COLUMN = [
+  '..X.......',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+];
+const EMPTY_10X10 = [
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+  '..........',
+];
 
-/** Create a 4x4 sprite with three frames, each with a pixel in a different column */
+/** Create a 10x10 sprite with three frames, each with a pixel in a different column */
 export const createThreeFrames = async (page: Page): Promise<void> => {
-  await setPiskelFromGrid(
-    page,
-    gridFromRows(["....", "....", "....", "...."])
-  );
+  await setPiskelFromGrid(page, gridFromRows(EMPTY_10X10));
   await clickTool(page, "tool-pen");
 
   // Draw in the first frame.
   await drawAtPixel(page, 0, 0);
-  expect(await readPixelRows(page, 4, 4, 0, 0)).toEqual(PIXEL_IN_FIRST_COLUMN);
+  expect(await readPixelRows(page, 10, 10, 0, 0)).toEqual(PIXEL_IN_FIRST_COLUMN);
 
   // Add a second frame and draw in it.
   await getAddFrameButton(page).click();
   await assertFrameCount(page, 2);
   await drawAtPixel(page, 1, 0);
-  expect(await readPixelRows(page, 4, 4, 0, 1)).toEqual(PIXEL_IN_SECOND_COLUMN);
+  expect(await readPixelRows(page, 10, 10, 0, 1)).toEqual(PIXEL_IN_SECOND_COLUMN);
 
   // Add a third frame and draw in it.
   await getAddFrameButton(page).click();
   await assertFrameCount(page, 3);
   await drawAtPixel(page, 2, 0);
-  expect(await readPixelRows(page, 4, 4, 0, 2)).toEqual(PIXEL_IN_THIRD_COLUMN);
+  expect(await readPixelRows(page, 10, 10, 0, 2)).toEqual(PIXEL_IN_THIRD_COLUMN);
 };
 
 /** Select a tab of the export drawer: "gif", "png", "zip" or "misc" */
@@ -1140,6 +1333,22 @@ export const setTopLayerOpacity = async (
   await getAllLayerOpacityButtons(page).first().click();
 };
 
+/** Check the opacity shown by the α button of the top layer, in its tooltip */
+export const assertTopLayerOpacity = async (
+  page: Page,
+  opacity: number
+): Promise<void> => {
+  const indicator = getAllLayerOpacityButtons(page).first();
+  // Bootstrap moves the title to data-original-title once the tooltip is set up
+  await expect
+    .poll(
+      async () =>
+        (await indicator.getAttribute("data-original-title")) ??
+        (await indicator.getAttribute("title"))
+    )
+    .toBe(`Layer opacity (${opacity})`);
+};
+
 /**
  * Letter for a color in the ASCII art grid of an exported image: "." is a
  * transparent pixel, and "?" any color without a letter.
@@ -1156,25 +1365,26 @@ const getColorLetter = (r: number, g: number, b: number): string => {
 };
 
 /**
- * Check the colors of the first frame of the first layer against an ASCII art
- * grid, with the letters of getColorLetter.
+ * Check the colors of a frame against an ASCII art grid, with the letters of
+ * getColorLetter. By default, the first frame of the first layer.
  */
 export const assertColorRows = async (
   page: Page,
-  rows: string[]
+  rows: string[],
+  { layerIndex = 0, frameIndex = 0 }: { layerIndex?: number; frameIndex?: number } = {}
 ): Promise<void> => {
   const readColorRows = async () => {
     const colors = await page.evaluate(
-      ({ width, height }) => {
+      ({ width, height, layerIndex, frameIndex }) => {
         const frame = window.pskl.app.piskelController
           .getPiskel()
-          .getLayerAt(0)
-          .getFrameAt(0);
+          .getLayerAt(layerIndex)
+          .getFrameAt(frameIndex);
         return Array.from({ length: height }, (_, y) =>
           Array.from({ length: width }, (_, x) => frame.getPixel(x, y))
         );
       },
-      { width: rows[0].length, height: rows.length }
+      { width: rows[0].length, height: rows.length, layerIndex, frameIndex }
     );
     // Pixels are stored as ABGR integers.
     return colors.map((row) =>
@@ -1201,6 +1411,23 @@ const saveDownload = async (page: Page, click: () => Promise<void>) => {
  * Download the PNG spritesheet from the export drawer. Its pixels are returned
  * as an ASCII art grid, and as exact [r, g, b, a] values with rgbaAt.
  */
+/**
+ * Decode a PNG file as rows of color letters, like the grids of assertColorRows:
+ * "." is transparent, and "?" a color without a letter or a partly transparent one.
+ */
+export const readPngColorRows = (file: Buffer): string[] => {
+  const png = new PNG(file);
+  const pixels = png.decodePixels();
+  return Array.from({ length: png.height }, (_, y) =>
+    Array.from({ length: png.width }, (_, x) => {
+      const i = (y * png.width + x) * 4;
+      const [r, g, b, a] = [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]];
+      if (a === 0) return ".";
+      return a === 255 ? getColorLetter(r, g, b) : "?";
+    }).join("")
+  );
+};
+
 export const downloadPngExport = async (page: Page) => {
   await selectExportTab(page, "png");
   const file = await saveDownload(page, () =>
@@ -1743,7 +1970,7 @@ export const closeNotification = async (page: Page): Promise<void> => {
 /** A file that a test can drop on the editor or pick in a file chooser */
 type TestFile = { name: string; mimeType: string; base64: string };
 
-/** Create a PNG file from an ASCII art grid: X is red, . is transparent */
+/** Create a PNG file from an ASCII art grid: X and R are red, G green, B blue, K black, . transparent */
 export const createPngFile = async (
   page: Page,
   name: string,
@@ -1754,10 +1981,19 @@ export const createPngFile = async (
     canvas.width = rows[0].length;
     canvas.height = rows.length;
     const context = canvas.getContext("2d")!;
-    context.fillStyle = "#FF0000";
+    const colors: Record<string, string> = {
+      X: "#FF0000",
+      R: "#FF0000",
+      G: "#00FF00",
+      B: "#0000FF",
+      K: "#000000"
+    };
     rows.forEach((row, y) => {
       [...row].forEach((pixel, x) => {
-        if (pixel === "X") context.fillRect(x, y, 1, 1);
+        if (colors[pixel]) {
+          context.fillStyle = colors[pixel];
+          context.fillRect(x, y, 1, 1);
+        }
       });
     });
     return canvas.toDataURL("image/png").split(",")[1];
@@ -1815,13 +2051,16 @@ const browseFile = async (page: Page, button: Locator, file: TestFile) => {
   });
 };
 
-/** Pick an image in the import drawer, and wait for the wizard's first step */
+/** Pick an image in the import drawer, and wait for the wizard's first step to show it */
 export const browseImageFile = async (
   page: Page,
   file: TestFile
 ): Promise<void> => {
   await browseFile(page, page.locator(".file-input-button"), file);
   await expect(page.locator(".current-step.import-image-container")).toBeAttached();
+  // The wizard fills its size fields once the image has loaded, at the same time as
+  // it shows the file name. Typing in a field before that would mix both values.
+  await expect(page.locator(".import-image-file-name")).toHaveText(file.name);
 };
 
 /** Pick a .piskel file in the import drawer */
@@ -2589,17 +2828,6 @@ export const assertSavePanelFields = async (
   await expect(page.locator("#save-description")).toHaveValue(description);
 };
 
-/** Check the opacity shown by the α button of the top layer */
-export const assertTopLayerOpacity = async (
-  page: Page,
-  opacity: number
-): Promise<void> => {
-  await expect(getAllLayerOpacityButtons(page).first()).toHaveAttribute(
-    "title",
-    `Layer opacity (${opacity})`
-  );
-};
-
 /** The Save in Browser button of the save panel */
 export const getSaveInBrowserButton = (page: Page): Locator =>
   page.locator("#save-localstorage-button");
@@ -3104,19 +3332,24 @@ export const rightClickAndCheckBrowserMenu = async (
   position: { x: number; y: number }
 ): Promise<boolean> => {
   // The app can stop the event, so listen before it reaches the app, and read the
-  // result once the event is over.
-  const isPrevented = page.evaluate(
-    () =>
-      new Promise<boolean>((resolve) => {
-        window.addEventListener(
-          "contextmenu",
-          (event) => setTimeout(() => resolve(event.defaultPrevented)),
-          { capture: true, once: true }
-        );
-      })
-  );
+  // result once the event is over. The listener must be in place before the click,
+  // or the click can reach the page first and the event is missed.
+  await page.evaluate(() => {
+    const result = window as unknown as { contextMenuPrevented?: boolean };
+    delete result.contextMenuPrevented;
+    window.addEventListener(
+      "contextmenu",
+      (event) => setTimeout(() => (result.contextMenuPrevented = event.defaultPrevented)),
+      { capture: true, once: true }
+    );
+  });
   await page.mouse.click(position.x, position.y, { button: "right" });
-  return !(await isPrevented);
+  const readPrevented = () =>
+    page.evaluate(
+      () => (window as unknown as { contextMenuPrevented?: boolean }).contextMenuPrevented
+    );
+  await expect.poll(readPrevented).not.toBeUndefined();
+  return !(await readPrevented());
 };
 
 /** Tap a pixel of the sprite on a touch screen */
