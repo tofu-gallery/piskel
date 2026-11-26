@@ -2420,7 +2420,7 @@ export const openCreatePaletteDialog = async (page: Page): Promise<void> => {
 
 /** Open the palette dialog for the selected palette */
 export const openEditPaletteDialog = async (page: Page): Promise<void> => {
-  await page.locator(".edit-palette-button").click();
+  await testId(page, "edit-palette-button").click();
   await assertDialogOpen(page, "create-palette");
 };
 
@@ -2547,6 +2547,27 @@ export const typePaletteDialogColor = async (
   const input = page.locator('[data-model="hex"]');
   await input.fill(hex);
   await input.press("Enter");
+};
+
+/**
+ * Assert the color shown by the palette dialog's color picker, as "#rrggbb".
+ * Its hex field shortens colors when it can ("#00f" for "#0000ff").
+ */
+export const assertPaletteDialogPickerColor = async (
+  page: Page,
+  hex: string
+): Promise<void> => {
+  const toLongHex = (value: string) =>
+    value.length === 4
+      ? "#" + [...value.slice(1)].map((digit) => digit + digit).join("")
+      : value;
+  await expect
+    .poll(async () =>
+      toLongHex(
+        (await page.locator('[data-model="hex"]').inputValue()).toLowerCase()
+      )
+    )
+    .toBe(hex.toLowerCase());
 };
 
 /** Drag a color of the palette dialog onto the position of another one */

@@ -60,26 +60,47 @@ colors from the sprite (see [drawing-tools.md](drawing-tools.md) and
 
 ### Palette dialog
 
-- `colors-and-palettes.create` **Create palette** (button or `alt+P`)
-  opens the palette dialog with a palette named "New palette" holding one
-  black color. You can name it, add colors ("+" adds a copy of the
-  selected color), remove, reorder and edit them, then save or cancel. A
-  saved palette becomes the selected one.
-- `colors-and-palettes.palette-dialog-add-copy` "+" adds a copy of the selected
-  color at the end of the list, and selects it.
-- `colors-and-palettes.palette-dialog-edit-color` Typing a hex value changes the
-  selected color.
-- `colors-and-palettes.palette-dialog-reorder` Dragging a color moves it in the
+The dialog edits a palette's name and colors. Its colors are shown as
+**swatches**, one per color, in a list on the left. The **dialog's color
+picker** on the right (spectrum, hex field, H/S/V and R/G/B sliders) shows
+and edits one color. In this section, only swatches are "selected"; the
+dialog's color picker "shows" a color.
+
+- `colors-and-palettes.create` **Create palette** (the "+" button left of
+  the palette dropdown, or `alt+P`) opens the palette dialog with a palette
+  named "New palette" holding one black swatch. You can name it, add,
+  remove, reorder and edit swatches, then save or cancel. A saved palette
+  becomes the selected palette.
+- `colors-and-palettes.palette-dialog-layout` The swatches are listed on the
+  left, in palette order, followed by a "+" swatch. The dialog's color picker
+  is on the right.
+- `colors-and-palettes.palette-dialog-select` At most one swatch is selected,
+  and it is highlighted. When the dialog opens, the first swatch is selected.
+  Clicking a swatch selects it.
+- `colors-and-palettes.palette-dialog-picker-shows` The dialog's color picker
+  shows the color of the selected swatch, and follows the selection.
+- `colors-and-palettes.palette-dialog-edit-color` Changing the color in the
+  dialog's color picker changes the selected swatch.
+- `colors-and-palettes.palette-dialog-add-copy` "+" adds a swatch at the end of
+  the list, with the color of the selected swatch, and selects it. With no
+  swatch selected, the new swatch gets the color shown in the dialog's color
+  picker.
+- `colors-and-palettes.palette-dialog-remove-selected` Each swatch has a remove
+  button. Removing the selected swatch selects the next one, or the previous one
+  if it was the last. Removing another swatch keeps the same swatch selected.
+- `colors-and-palettes.palette-dialog-reorder` Dragging a swatch moves it in the
   list, and selects it. The saved palette keeps that order.
-- `colors-and-palettes.empty-palette` All the colors can be removed, and the
-  palette can be saved empty.
+- `colors-and-palettes.empty-palette` All the swatches can be removed, and the
+  palette can be saved empty. With no swatch left, none is selected: the
+  dialog's color picker keeps showing the color of the last removed swatch, and
+  changing it doesn't change the palette.
 - `colors-and-palettes.palette-dialog-buttons` When creating a palette, the
   dialog offers importing a file, but not downloading or deleting. When editing
   one, it offers downloading and deleting, but not importing.
 - `colors-and-palettes.palette-dialog-cancel` Cancelling discards all the changes
   made in the dialog.
-- `colors-and-palettes.edit` **Edit palette** opens the dialog for the
-  selected palette.
+- `colors-and-palettes.edit` **Edit palette** (the pencil button right of
+  the palette dropdown) opens the dialog for the selected palette.
 - `colors-and-palettes.edit-save` Saving an edited palette replaces it, with its
   new name and colors, instead of adding another palette. It stays selected.
 - `colors-and-palettes.delete` From the dialog, a palette can be deleted,
@@ -90,7 +111,7 @@ colors from the sprite (see [drawing-tools.md](drawing-tools.md) and
   palette instead creates a new palette, "Current colors clone",
   prefilled with the current colors.
 - `colors-and-palettes.clone-empty` When the sprite has no colors, the clone starts
-  with one black color.
+  with one black swatch.
 
 ### Importing palettes
 
@@ -119,5 +140,6 @@ colors from the sprite (see [drawing-tools.md](drawing-tools.md) and
 ## UI and shortcuts
 
 - Color pickers at the bottom of the left toolbar.
-- Palettes panel in the right column, palette dialog.
+- Palettes panel in the right column, below the layers and "Transform"
+  panels; palette dialog.
 - Shortcuts: `X`, `D`, `alt+P`, `1`–`9`, `<`, `>`.
